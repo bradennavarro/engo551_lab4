@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ENGO 551 Lab 4</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" integrity="sha384-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+    <style>
+        #searchBar {
+            position: absolute;
+            top: 20px;
+            left: 60px;
+            z-index: 1000;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+        #layerButton {
+            position: absolute;
+            top: 20px;
+            left: 300px;
+            z-index: 1000;
+        }
+    </style>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js" integrity="sha384-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/overlapping-marker-spiderfier-leaflet@0.2.6/dist/oms.min.js"></script>
+    <script src='https://api.mapbox.com/mapbox.js/v3.3.1/mapbox.js'></script>
+    <link href='https://api.mapbox.com/mapbox.js/v3.3.1/mapbox.css' rel='stylesheet' />
+
+</head>
+<body>
+
+<div id="map"></div>
+<div id="searchBar" class="input-group">
+    <input type="text" id="dateRangePicker" class="form-control" />
+    <button class="btn btn-primary" id="searchButton">Search</button>
+</div>
+<div id = "layerButton" >
+    <button id="toggleLayerButton">Traffic Incidents 2017</button>
+</div>
+
+<script>
+
+    L.mapbox.accessToken = 'pk.eyJ1IjoiYm5hdmFycm8yMyIsImEiOiJjbHRsdDR6d2MxZjY1MmtxbXVpd3BoOXhsIn0.w_vOcb_9Pk3whht0RMfEjA';
+    
+    var map = L.map('map').setView([51.0447, -114.0719], 10);
+
+    // Adding OpenStreetMap tiles as the base layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Function to toggle Mapbox style layer
+    function toggleMapboxLayer() {
+        if (map.hasLayer(mapboxLayer)) {
+            map.removeLayer(mapboxLayer);
+        } else {
+            map.addLayer(mapboxLayer);
+        }
+    }
+
+    // Event listener for the toggle layer button
+    document.getElementById('toggleLayerButton').addEventListener('click', function() {
+        toggleMapboxLayer();
+    });
+
+    // Mapbox style layer
+    var mapboxLayer = L.tileLayer(
+        'https://api.mapbox.com/styles/v1/bnavarro23/cltltr1rn015l01oi5ibz8ket/tiles/{z}/{x}/{y}?access_token=' + L.mapbox.accessToken, {
+            tileSize: 512,
+            zoomOffset: -1,
+            attribution: '© <a href="https://apps.mapbox.com/feedback/">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    // Initial addition of Mapbox style layer
+    map.addLayer(mapboxLayer);
+
+    // Required Plug-ins
+    var oms = new OverlappingMarkerSpiderfier(map);
+    var markers = L.markerClusterGroup({
+        disableClusteringAtZoom: 12
+    });
+
+    // Initialize date range picker
+    $('#dateRangePicker').daterangepicker({
+        opens: 'left',
+        locale: {
+            format: 'YYYY-MM-DD'
+        }
+    });
+
+    // Function to perform search and display markers
+    function performSearch() {
+        var startDate = $('#dateRangePicker').data('daterangepicker').startDate.format('YYYY-MM-DD');
+        var endDate = $('#dateRangePicker').data('daterangepicker').endDate.format('YYYY-MM-DD');
+
+        // Clear existing markers
+        markers.clearLayers();
+
+        var matchingPermits = `https://data.calgary.ca/resource/c2es-76ed.geojson?$where=issueddate > '${startDate}' and issueddate < '${endDate}'`;
+        
+        // Fetch data from Open Calgary API
+        fetch(matchingPermits)
+            .then(response => response.json())
+            .then(data => {
+                data.features.forEach(feature => {
+                    var permit = feature.properties;
+                    var location = feature.geometry.coordinates.reverse(); // Leaflet uses [lat, lng] format
+                    
+                    // Creates a marker variable
+                    var marker = L.marker(location)
+                                    .bindPopup('<b>Issue Date:</b> ' + permit.issueddate +
+                                               '<br><b>Work Class Group:</b> ' + permit.workclassgroup +
+                                               '<br><b>Contractor Name:</b> ' + permit.contractorname +
+                                               '<br><b>Community Name:</b> ' + permit.communityname +
+                                               '<br><b>Original Address:</b> ' + permit.originaladdress);
+                
+                    // Add marker to both spiderfier and cluster group Plug-ins
+                    oms.addMarker(marker);
+                    markers.addLayer(marker);
+                });
+            })
+            .catch(error => {
+            console.error('Error fetching data:', error);
+            });
+
+    }
+
+    // Perform search once the search button is clicked
+    $('#searchButton').on('click', function() {
+        performSearch();
+    });
+
+    // Perform initial search when page loads
+    performSearch();
+
+    // Add the marker cluster group to the map
+    map.addLayer(markers);
+
+</script>
+
+</body>
+</html>
